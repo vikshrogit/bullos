@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # BullOS Builder for Raspberry Pi 5
-# Version 1.2
+# Version 1.3
 
 set -e
 
@@ -32,7 +32,7 @@ cat << EOF | sudo chroot ${WORK_DIR}/rootfs /bin/bash
 apt-get update
 apt-get install -y --no-install-recommends \
     sudo systemd network-manager \
-    plymouth console-setup keyboard-configuration \
+    plymouth plymouth-themes console-setup keyboard-configuration \
     git build-essential bc bison flex libssl-dev \
     kmod cpio libncurses5-dev crossbuild-essential-arm64 \
     u-boot-tools device-tree-compiler
@@ -46,9 +46,8 @@ if [ ! -d "${WORK_DIR}/linux" ]; then
     git clone --depth=1 --branch ${KERNEL_BRANCH} ${KERNEL_SOURCE} ${WORK_DIR}/linux
 fi
 
-# Install cross-compiler on host system if not present
 if ! command -v aarch64-linux-gnu-gcc &> /dev/null; then
-    echo "Installing cross-compiler on host system..."
+    echo "Installing cross-compiler..."
     sudo apt-get update
     sudo apt-get install -y gcc-aarch64-linux-gnu
 fi
@@ -67,14 +66,47 @@ sudo cp -rL ${WORK_DIR}/linux/arch/arm64/boot/dts/overlays ${WORK_DIR}/rootfs/bo
 
 # Step 5: Customize OS branding
 echo "[5/8] Customizing OS branding..."
+
+# Create Plymouth theme directory
+sudo mkdir -p ${WORK_DIR}/rootfs/usr/share/plymouth/themes/bullos
+
+# Create theme files
+cat << EOF | sudo tee ${WORK_DIR}/rootfs/usr/share/plymouth/themes/bullos/bullos.plymouth >/dev/null
+[Plymouth Theme]
+Name=BullOS Splash
+Description=A custom splash screen for BullOS
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/bullos
+ScriptFile=/usr/share/plymouth/themes/bullos/bullos.script
+EOF
+
+cat << EOF | sudo tee ${WORK_DIR}/rootfs/usr/share/plymouth/themes/bullos/bullos.script >/dev/null
+wallpaper_image=Image("bullos-splash.gif");
+
+bullos_logo = Image("bullos-logo.png");
+bullos_logo_sprite = Sprite(bullos_logo);
+bullos_logo_sprite.SetX(Window.GetWidth()/2 - bullos_logo.GetWidth()/2);
+bullos_logo_sprite.SetY(Window.GetHeight()/2 - bullos_logo.GetHeight()/2);
+
+progress_bar = Box(Window.GetWidth()/4, Window.GetHeight()*3/4, Window.GetWidth()/2, 5);
+progress_bar.SetColor(0.16, 0.63, 0.96, 1.0);
+progress_sprite = Sprite(progress_bar);
+progress_sprite.SetX(Window.GetWidth()/4);
+progress_sprite.SetY(Window.GetHeight()*3/4);
+EOF
+
+# Copy branding files
+sudo mkdir -p ${WORK_DIR}/rootfs/usr/share/pixmaps
+sudo cp ${LOGO_1TO1_PATH} ${WORK_DIR}/rootfs/usr/share/plymouth/themes/bullos/bullos-logo.png
+sudo cp ${LOGO_1TO1_PATH} ${WORK_DIR}/rootfs/usr/share/pixmaps/bullos-logo.png
+sudo cp ${SPLASH_GIF_PATH} ${WORK_DIR}/rootfs/usr/share/plymouth/themes/bullos/bullos-splash.gif
+
+# Update OS information
 sudo sed -i 's/Raspberry Pi/BullOS/g' ${WORK_DIR}/rootfs/etc/os-release
 sudo sed -i 's/Debian/BullOS/g' ${WORK_DIR}/rootfs/etc/os-release
 sudo sed -i "s/^PRETTY_NAME=.*/PRETTY_NAME=\"${OS_NAME} ${OS_VERSION}\"/" ${WORK_DIR}/rootfs/etc/os-release
-
-# Install custom branding
-sudo mkdir -p ${WORK_DIR}/rootfs/usr/share/pixmaps ${WORK_DIR}/rootfs/usr/share/plymouth/themes/bullos
-sudo cp ${LOGO_1TO1_PATH} ${WORK_DIR}/rootfs/usr/share/pixmaps/bullos-logo.png
-sudo cp ${SPLASH_GIF_PATH} ${WORK_DIR}/rootfs/usr/share/plymouth/themes/bullos/bullos-splash.gif
 
 # Step 6: Create user and set up environment
 echo "[6/8] Setting up user environment..."
@@ -83,34 +115,31 @@ echo "root:bullos" | chpasswd
 useradd -m -G sudo -s /bin/bash bullos
 echo "bullos:bullos" | chpasswd
 echo "${OS_NAME} ${OS_VERSION} \\n \\l" > /etc/issue
-plymouth-set-default-theme -R bullos
 EOF
+
+# Set Plymouth theme (must be done after all files are created)
+sudo chroot ${WORK_DIR}/rootfs /bin/bash -c "plymouth-set-default-theme -R bullos"
 
 # Step 7: Prepare image file
 echo "[7/8] Creating image file..."
 IMAGE_FILE="${OUTPUT_DIR}/bullos-rpi5-${OS_VERSION}.img"
 
-# Create blank image
 dd if=/dev/zero of=${IMAGE_FILE} bs=1M count=${IMAGE_SIZE}
 LOOP_DEVICE=$(sudo losetup -f --show ${IMAGE_FILE})
 
-# Partition and format
 sudo parted -s ${LOOP_DEVICE} mklabel msdos
 sudo parted -s ${LOOP_DEVICE} mkpart primary fat32 1MiB 256MiB
 sudo parted -s ${LOOP_DEVICE} mkpart primary ext4 256MiB 100%
 sudo mkfs.vfat -F32 ${LOOP_DEVICE}p1
 sudo mkfs.ext4 ${LOOP_DEVICE}p2
 
-# Mount partitions
 mkdir -p ${WORK_DIR}/boot ${WORK_DIR}/root
 sudo mount ${LOOP_DEVICE}p1 ${WORK_DIR}/boot
 sudo mount ${LOOP_DEVICE}p2 ${WORK_DIR}/root
 
-# Copy files with proper symlink handling
 sudo cp -a ${WORK_DIR}/rootfs/. ${WORK_DIR}/root/
 sudo cp -rL ${WORK_DIR}/rootfs/boot/. ${WORK_DIR}/boot/
 
-# Create boot files
 cat << EOF | sudo tee ${WORK_DIR}/boot/config.txt >/dev/null
 arm_64bit=1
 kernel=kernel8.img
@@ -124,7 +153,6 @@ cat << EOF | sudo tee ${WORK_DIR}/boot/cmdline.txt >/dev/null
 console=serial0,115200 console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 elevator=deadline fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles
 EOF
 
-# Clean up
 sudo umount ${WORK_DIR}/boot ${WORK_DIR}/root
 sudo losetup -d ${LOOP_DEVICE}
 rm -rf ${WORK_DIR}/boot ${WORK_DIR}/root

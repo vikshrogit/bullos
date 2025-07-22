@@ -1,0 +1,61 @@
+name: 🐂 Build and Release BullOs OS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'build-bullos.sh'
+      - 'logo/**'
+      - '.github/workflows/bullos.yml'
+  workflow_dispatch: # manual trigger
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # Needed to create release
+
+    steps:
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v3
+
+      - name: 🛠️ Install required dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y qemu-user-static debootstrap parted losetup kpartx rsync wget git make gcc
+
+      - name: 🔧 Make build script executable
+        run: chmod +x bullos.sh
+
+      - name: 🚀 Build BullOs Image
+        run: ./bullos.sh
+
+      - name: 📦 Rename Output Image
+        run: |
+          if [ -f BullOs-1.0-raspberrypi5.img ]; then
+            BUILD_ID=$(git rev-list --count HEAD)
+            VERSION_TAG="v1.0.${BUILD_ID}"
+            NEW_IMG_NAME="BullOs-${VERSION_TAG}-raspberrypi5.img"
+            mv BullOs-1.0-raspberrypi5.img "$NEW_IMG_NAME"
+            echo "VERSION_TAG=$VERSION_TAG" >> $GITHUB_ENV
+            echo "NEW_IMG_NAME=$NEW_IMG_NAME" >> $GITHUB_ENV
+          else
+            echo "Image build failed!"
+            exit 1
+          fi
+
+      - name: 🧾 Generate Release Notes
+        run: |
+          echo "### 🐂 BullOs OS - Version $VERSION_TAG" > release_notes.md
+          echo "- Auto-generated build from commit history" >> release_notes.md
+          echo "- Built on $(date)" >> release_notes.md
+          echo "- Raspberry Pi 5 compatible" >> release_notes.md
+
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          name: BullOs OS ${{ env.VERSION_TAG }}
+          body_path: release_notes.md
+          files: ${{ env.NEW_IMG_NAME }}
