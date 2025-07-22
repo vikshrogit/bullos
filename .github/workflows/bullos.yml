@@ -23,7 +23,7 @@ jobs:
       - name: 🛠️ Install required dependencies
         run: |
           sudo apt update
-          sudo apt install -y qemu-user-static debootstrap parted losetup kpartx rsync wget git make gcc
+          sudo apt install -y qemu-user-static debootstrap parted kpartx rsync wget git make gcc util-linux
 
       - name: 🔧 Make build script executable
         run: chmod +x bullos.sh
