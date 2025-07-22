@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # BullOS Builder for Raspberry Pi 5
-# Version 1.0
+# Version 1.1
 
 set -e
 
@@ -31,18 +31,25 @@ echo "[2/8] Installing required packages..."
 cat << EOF | sudo chroot ${WORK_DIR}/rootfs /bin/bash
 apt-get update
 apt-get install -y --no-install-recommends \
-    sudo systemd network-manager raspi-config \
+    sudo systemd network-manager \
     plymouth console-setup keyboard-configuration \
     git build-essential bc bison flex libssl-dev \
-    kmod cpio libncurses5-dev
+    kmod cpio libncurses5-dev crossbuild-essential-arm64
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 EOF
 
-# Step 3: Build custom kernel (optional)
+# Step 3: Build custom kernel
 echo "[3/8] Building custom kernel..."
 if [ ! -d "${WORK_DIR}/linux" ]; then
     git clone --depth=1 --branch ${KERNEL_BRANCH} ${KERNEL_SOURCE} ${WORK_DIR}/linux
+fi
+
+# Install cross-compiler on host system if not present
+if ! command -v aarch64-linux-gnu-gcc &> /dev/null; then
+    echo "Installing cross-compiler on host system..."
+    sudo apt-get update
+    sudo apt-get install -y gcc-aarch64-linux-gnu
 fi
 
 cd ${WORK_DIR}/linux
