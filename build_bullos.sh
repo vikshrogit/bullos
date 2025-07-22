@@ -14,7 +14,7 @@ OUTPUT_DIR="./output"
 LOGO_1TO1_PATH="./logo/logo.png"
 SPLASH_GIF_PATH="./logo/splash.gif"
 KERNEL_SOURCE="https://github.com/raspberrypi/linux"
-KERNEL_BRANCH="rpi-6.6.y"
+KERNEL_BRANCH="rpi-6.12.y"
 IMAGE_SIZE=4000 # in MB
 
 # Create directories
