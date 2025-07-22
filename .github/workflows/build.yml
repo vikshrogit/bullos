@@ -1,0 +1,44 @@
+name: Build BullOS for Raspberry Pi 5
+
+on:
+  push:
+    branches: [ main ]
+  release:
+    types: [ created ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v2
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y debootstrap qemu-user-static binfmt-support \
+          git build-essential bc bison flex libssl-dev kmod cpio \
+          libncurses5-dev xz-utils parted dosfstools
+        
+    - name: Build BullOS
+      run: |
+        chmod +x build_bullos.sh
+        sudo ./build_bullos.sh
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: bullos-rpi5-image
+        path: output/bullos-rpi5-*.img.xz
+        
+    - name: Create release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: output/bullos-rpi5-*.img.xz
