@@ -1,0 +1,77 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+stages:
+- stage: Build
+  displayName: Build BullOS for Raspberry Pi 5
+  jobs:
+  - job: BuildBullOS
+    displayName: Build BullOS Image
+    pool:
+      vmImage: 'ubuntu-latest'
+
+    steps:
+    - task: UseGitVersion@5
+      displayName: 'Checkout repository'
+      inputs:
+        versionSpec: '5.x'
+
+    - task: Bash@3
+      displayName: 'Install dependencies'
+      inputs:
+        targetType: 'inline'
+        script: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap qemu-user-static binfmt-support \
+            git build-essential bc bison flex libssl-dev kmod cpio \
+            libncurses5-dev xz-utils parted dosfstools
+
+    - task: Bash@3
+      displayName: 'Build BullOS'
+      inputs:
+        targetType: 'inline'
+        script: |
+          chmod +x build_bullos.sh
+          sudo ./build_bullos.sh
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish BullOS Image'
+      inputs:
+        PathtoPublish: 'output'
+        ArtifactName: 'bullos-rpi5-image'
+        publishLocation: 'Container'
+
+- stage: Release
+  displayName: 'Release BullOS Image'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(variables['Build.Reason'], 'Manual'))  # Manual release trigger
+  jobs:
+  - job: ReleaseJob
+    displayName: 'Upload to GitHub Release'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: DownloadBuildArtifacts@0
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: 'bullos-rpi5-image'
+
+    - task: Bash@3
+      displayName: 'Upload to GitHub Release'
+      env:
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
+      inputs:
+        targetType: 'inline'
+        script: |
+          curl -sL https://github.com/cli/cli/releases/latest/download/gh_2.49.0_linux_amd64.deb -o gh.deb
+          sudo apt install -y ./gh.deb
+          gh auth login --with-token <<< "$GITHUB_TOKEN"
+          gh release upload "$(Build.BuildNumber)" bullos-rpi5-image/*.img.xz --repo <your-username>/<your-repo>
