@@ -28,17 +28,19 @@ jobs:
         
     - name: Build BullOS
       run: |
-        chmod +x build_bullos.sh
-        sudo ./build_bullos.sh
+        chmod +x bullos.sh
+        sudo ./bullos.sh
         
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: bullos-rpi5-image
-        path: output/bullos-rpi5-*.img.xz
+        #path: output/bullos-rpi5-*.img.xz
+        path: BullOs-1.0-raspberrypi5.img
         
     - name: Create release
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v2
       with:
-        files: output/bullos-rpi5-*.img.xz
+        #files: output/bullos-rpi5-*.img.xz
+        files: BullOs-1.0-raspberrypi5.img
